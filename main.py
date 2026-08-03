@@ -3,11 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 from datetime import datetime
-import psycopg2
-from psycopg2.extras import RealDictCursor
 import shutil
 import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
 import traceback
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
 
 # Importation de tes modules d'Intelligence Artificielle
 import geocode
@@ -21,16 +25,10 @@ from contextlib import asynccontextmanager
 # ==========================================
 # CONFIGURATION BASE DE DONNÉES
 # ==========================================
-DB_CONFIG = {
-    "dbname": "surveillance_db",
-    "user": "postgres",
-    "password": "1234",
-    "host": "localhost",
-    "port": "5432"
-}
+
 
 def get_db_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    return psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
 
 # ==========================================
 # CRON JOB (Tâches planifiées)
@@ -47,7 +45,7 @@ def tache_planifiee_dbscan():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     scheduler = BackgroundScheduler()
-    scheduler.add_job(tache_planifiee_dbscan, 'interval', hours=4, id='job_dbscan')
+    scheduler.add_job(tache_planifiee_dbscan, 'interval', hours=0.5, id='job_dbscan')
     scheduler.start()
     print("Le planificateur de tâches (CRON) a été démarré. DBSCAN tournera toutes les 4 heures.")
     yield 

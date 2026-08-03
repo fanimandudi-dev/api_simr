@@ -1,15 +1,19 @@
-import psycopg2
+
 import random
 from datetime import datetime, timedelta
 import math
 
-DB_CONFIG = {
-    "dbname": "surveillance_db",
-    "user": "postgres",
-    "password": "1234",
-    "host": "localhost",
-    "port": "5432"
-}
+
+import os
+import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# 1. Charger les variables d'environnement
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 # Coordonnées des foyers d'infection
 FOYERS = [
@@ -41,7 +45,7 @@ def generer_epidemiologie():
     print(f"[{datetime.now()}] Démarrage de la génération de l'épidémie...")
     
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cursor = conn.cursor()
 
         # On nettoie d'abord les anciennes données cliniques

@@ -1,4 +1,11 @@
+import os
 import psycopg2
+from psycopg2.extras import RealDictCursor
+from dotenv import load_dotenv
+
+# 1. Charger les variables d'environnement
+
+
 import pandas as pd
 import numpy as np
 from sklearn.cluster import DBSCAN
@@ -11,13 +18,9 @@ warnings.filterwarnings("ignore", category=UserWarning)
 # ==========================================
 # 1. CONFIGURATION
 # ==========================================
-DB_CONFIG = {
-    "dbname": "surveillance_db",
-    "user": "postgres",
-    "password": "1234", # Votre mot de passe réel
-    "host": "localhost",
-    "port": "5432"
-}
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+load_dotenv()
 
 # Paramètres de l'algorithme DBSCAN
 MALADIE_ID = 1               # 1 = Choléra
@@ -41,7 +44,7 @@ def executer_dbscan():
     print(f"\n[{datetime.now()}] 🔬 Démarrage de l'analyse IA (DBSCAN)...")
     
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
         cursor = conn.cursor()
 
         # ---------------------------------------------------------

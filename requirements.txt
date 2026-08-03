@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+psycopg2-binary
+scikit-learn
+pandas
+requests
+apscheduler
+python-multipart
