@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     scheduler = BackgroundScheduler()
     scheduler.add_job(tache_planifiee_dbscan, 'interval', hours=0.5, id='job_dbscan')
     scheduler.start()
-    print("Le planificateur de tâches (CRON) a été démarré. DBSCAN tournera toutes les 4 heures.")
+    print("Le planificateur de tâches (CRON) a été démarré. DBSCAN tournera toutes les 30 minutes.")
     yield 
     scheduler.shutdown()
     print("Planificateur de tâches arrêté.")
@@ -65,7 +65,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:4200"],
+    allow_origins=["http://localhost:4200","https://front-end-simr.vercel.app/"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
