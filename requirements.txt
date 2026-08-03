@@ -8,3 +8,4 @@ apscheduler
 python-multipart
 dotenv
 opencv-python-headless
+pytesseract
