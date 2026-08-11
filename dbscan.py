@@ -15,8 +15,8 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 # --- NOUVEAUX PARAMÈTRES IA (Plus tolérants) ---
 MALADIE_ID = 1               
-DISTANCE_METRES = 500    # Tolérance IA augmentée à 1,5 km (au lieu de 450m)
-MIN_CAS_POUR_ALERTE = 3      # Il faut au moins 5 cas regroupés pour faire un foyer
+DISTANCE_METRES = 800    # Tolérance IA augmentée à 1,5 km (au lieu de 450m)
+MIN_CAS_POUR_ALERTE = 5    # Il faut au moins 5 cas regroupés pour faire un foyer
 RAYON_TERRE_KM = 6371.0088
 
 def haversine_distance(lat1, lon1, lat2, lon2):
