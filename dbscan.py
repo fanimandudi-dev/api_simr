@@ -24,7 +24,7 @@ load_dotenv()
 
 # Paramètres de l'algorithme DBSCAN
 MALADIE_ID = 1               # 1 = Choléra
-DISTANCE_METRES = 450        # Epsilon : Rayon de voisinage spatial (ex: 450m en zone urbaine dense)
+DISTANCE_METRES = 800        # Epsilon : Rayon de voisinage spatial (ex: 450m en zone urbaine dense)
 MIN_CAS_POUR_ALERTE = 3      # MinPts : Nombre de cas requis pour former un foyer épidémique
 RAYON_TERRE_KM = 6371.0088   # Constante pour Haversine
 
