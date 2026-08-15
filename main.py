@@ -703,8 +703,6 @@ async def supprimer_utilisateur(user_id: int):
 @app.post("/api/cas")
 @app.post("/api/cas/")
 async def creer_nouveau_cas(cas_data: CasMaladieCreate):
-    ...
-async def creer_nouveau_cas(cas_data: CasMaladieCreate):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
