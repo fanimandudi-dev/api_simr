@@ -436,41 +436,62 @@ class CentreSanteCreate(BaseModel):
     nom: str
     type_centre: str
     id_aire_sante: int
+    
+from typing import Optional
+from fastapi import FastAPI, HTTPException
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
 @app.post("/api/admin/centres")
 async def creer_centre_sante(centre: CentreSanteCreate):
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Ajout du centre avec l'état 'ACTIF' par défaut
+        # 1. Vérifier d'abord si l'aire de santé existe pour éviter une erreur SQL FK ou TypeError
+        cursor.execute("SELECT nom FROM aire_sante WHERE id = %s;", (centre.id_aire_sante,))
+        aire_row = cursor.fetchone()
+        if not aire_row:
+            raise HTTPException(status_code=400, detail=f"L'aire de santé avec l'ID {centre.id_aire_sante} n'existe pas.")
+        aire_nom = aire_row[0]
+
+        # 2. Ajout du centre avec l'état 'ACTIF' par défaut
         cursor.execute("""
             INSERT INTO centre_sante (nom, type_centre, id_aire_sante, etat)
             VALUES (%s, %s, %s, 'ACTIF') RETURNING id;
         """, (centre.nom, centre.type_centre, centre.id_aire_sante))
         new_id = cursor.fetchone()[0]
         
-        cursor.execute("SELECT nom FROM aire_sante WHERE id = %s;", (centre.id_aire_sante,))
-        aire_nom = cursor.fetchone()[0]
         conn.commit()
         return {
             "message": "Centre de santé créé", 
             "id": new_id, "nom": centre.nom, "type_centre": centre.type_centre, 
             "id_aire_sante": centre.id_aire_sante, "aire_nom": aire_nom
         }
+    except HTTPException as he:
+        if conn: conn.rollback()
+        raise he
+    except psycopg2.errors.ForeignKeyViolation:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=400, detail="L'aire de santé spécifiée est invalide.")
     except Exception as e:
-        if 'conn' in locals(): conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur serveur : {str(e)}")
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 
 @app.get("/api/admin/centres")
 async def get_centres_sante(zone_id: Optional[int] = None):
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # Filtre sur c.etat = 'ACTIF' pour masquer les centres supprimés logiquement
         if zone_id:
             cursor.execute("""
                 SELECT c.id, c.nom, c.type_centre, c.id_aire_sante, a.nom as aire_nom
@@ -489,18 +510,28 @@ async def get_centres_sante(zone_id: Optional[int] = None):
             """)
         return cursor.fetchall()
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Erreur serveur : {str(e)}")
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 
 @app.put("/api/admin/centres/{centre_id}")
 async def modifier_centre_sante(centre_id: int, centre: CentreSanteCreate):
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Ne modifier que si le centre est toujours actif
+        # 1. Vérifier si la nouvelle aire de santé existe
+        cursor.execute("SELECT nom FROM aire_sante WHERE id = %s;", (centre.id_aire_sante,))
+        aire_row = cursor.fetchone()
+        if not aire_row:
+            raise HTTPException(status_code=400, detail=f"L'aire de santé avec l'ID {centre.id_aire_sante} n'existe pas.")
+        aire_nom = aire_row[0]
+
+        # 2. Modifier le centre s'il est actif
         cursor.execute("""
             UPDATE centre_sante 
             SET nom = %s, type_centre = %s, id_aire_sante = %s
@@ -510,38 +541,41 @@ async def modifier_centre_sante(centre_id: int, centre: CentreSanteCreate):
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Centre introuvable ou inactif.")
             
-        cursor.execute("SELECT nom FROM aire_sante WHERE id = %s;", (centre.id_aire_sante,))
-        aire_nom = cursor.fetchone()[0]
         conn.commit()
-        
         return {
             "message": "Centre de santé mis à jour", 
             "id": centre_id, "nom": centre.nom, "type_centre": centre.type_centre, 
             "id_aire_sante": centre.id_aire_sante, "aire_nom": aire_nom
         }
+    except HTTPException as he:
+        if conn: conn.rollback()
+        raise he
+    except psycopg2.errors.ForeignKeyViolation:
+        if conn: conn.rollback()
+        raise HTTPException(status_code=400, detail="L'aire de santé spécifiée est invalide.")
     except Exception as e:
-        if 'conn' in locals(): conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur serveur : {str(e)}")
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()
+
 
 @app.delete("/api/admin/centres/{centre_id}")
 async def supprimer_centre_sante(centre_id: int):
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # LOGIQUE MÉTIER : Y a-t-il des cas dans ce centre ?
         cursor.execute("SELECT COUNT(*) FROM cas_maladie WHERE id_centre_sante = %s;", (centre_id,))
         nb_cas = cursor.fetchone()[0]
 
         if nb_cas > 0:
-            # S'il a des cas, on ne le supprime pas, on le désactive pour protéger l'historique !
             cursor.execute("UPDATE centre_sante SET etat = 'INACTIF' WHERE id = %s;", (centre_id,))
             message = f"Le centre a été désactivé (INACTIF) car il contient {nb_cas} cas d'épidémie."
         else:
-            # S'il n'y a pas de cas, on vérifie d'abord qu'aucun médecin actif n'y est affecté
             try:
                 cursor.execute("DELETE FROM centre_sante WHERE id = %s AND etat = 'ACTIF';", (centre_id,))
                 if cursor.rowcount == 0:
@@ -550,20 +584,20 @@ async def supprimer_centre_sante(centre_id: int):
             except psycopg2.errors.ForeignKeyViolation:
                 conn.rollback()
                 cursor = conn.cursor()
-                # Un médecin y est rattaché, on se rabat sur la désactivation
                 cursor.execute("UPDATE centre_sante SET etat = 'INACTIF' WHERE id = %s;", (centre_id,))
-                message = "Le centre a été désactivé (Des médecins y sont affectés)."
+                message = "Le centre a été désactivé (Des médecins/utilisateurs y sont affectés)."
 
         conn.commit()
         return {"message": message}
     except HTTPException as he:
+        if conn: conn.rollback()
         raise he
     except Exception as e:
-        if 'conn' in locals(): conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        if conn: conn.rollback()
+        raise HTTPException(status_code=500, detail=f"Erreur serveur : {str(e)}")
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if cursor: cursor.close()
+        if conn: conn.close()
 # ==========================================
 # ROUTES : UTILISATEURS (COMPTES)
 class UtilisateurCreate(BaseModel):
