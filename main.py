@@ -697,11 +697,27 @@ async def supprimer_utilisateur(user_id: int):
         if 'conn' in locals(): conn.close()
 
 # ==========================================
-# ROUTES : SAISIE DES CAS (MANUELLE & OCR)@app.post("/api/cas")
-
-# Permet de gérer à la fois /api/cas et /api/cas/
+# ROUTES : SAISIE DES CAS (MANUELLE & OCR)
+# ==========================================
+class CasMaladieCreate(BaseModel):
+    patientNom: str
+    patientPrenom: str
+    patientPostnom: Optional[str] = ""
+    dateNaissance: Optional[str] = None
+    sexe: str = 'M'
+    telephone: Optional[str] = ""
+    commune: str
+    quartier: str = ""
+    avenue: str = ""
+    numeroResidence: str = ""
+    symptomes: str = ''
+    statutId: int = 1
+    sourceSaisie: str
+    lat_gps: Optional[float] = None
+    lng_gps: Optional[float] = None
+    id_centre: int
+    id_utilisateur: int
 @app.post("/api/cas")
-@app.post("/api/cas/")
 async def creer_nouveau_cas(cas_data: CasMaladieCreate):
     try:
         conn = get_db_connection()
@@ -769,7 +785,6 @@ async def creer_nouveau_cas(cas_data: CasMaladieCreate):
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
-        
 # ==========================================
 # ROUTES : NUMÉRISATION SIMR
 # ==========================================
