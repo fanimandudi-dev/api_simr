@@ -13,7 +13,7 @@ warnings.filterwarnings("ignore", category=UserWarning)
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# --- NOUVEAUX PARAMÈTRES IA (Plus tolérants) ---
+# --- PARAMÈTRES IA ---
 MALADIE_ID = 1               # 1 = Choléra
 DISTANCE_METRES = 450        # Epsilon : Rayon de voisinage spatial (450m)
 MIN_CAS_POUR_ALERTE = 3      # MinPts : Nombre de cas requis pour former un foyer
@@ -28,14 +28,13 @@ def haversine_distance(lat1, lon1, lat2, lon2):
     return (RAYON_TERRE_KM * c) * 1000
 
 # ==========================================
-# 2. EXÉCUTION DU MACHINE LEARNING (DBSCAN)
+# EXÉCUTION DU MACHINE LEARNING (DBSCAN)
 # ==========================================
 def executer_dbscan():
     print(f"\n[{datetime.now()}] 🔬 Démarrage de l'analyse IA (DBSCAN)...")
     
     try:
-        conn = psycopg2.connect(**DB_CONFIG)
-        cursor = conn.cursor()
+        conn = psycopg2.connect(DATABASE_URL)
 
         # ÉTAPE A : EXTRACTION & FILTRAGE (On exclut le niveau INCONNU)
         query = """
@@ -67,6 +66,8 @@ def executer_dbscan():
         
         print(f"   🚨 {len(labels_uniques)} foyers épidémiques (clusters) détectés.")
 
+        cursor_exec = conn.cursor()
+
         for label in labels_uniques:
             cas_du_cluster = clusters_trouves[clusters_trouves['cluster_label'] == label]
             liste_ids_cas = cas_du_cluster['id'].tolist()
@@ -77,47 +78,59 @@ def executer_dbscan():
             
             distances = [haversine_distance(centre_lat, centre_lon, row['latitude'], row['longitude']) for index, row in cas_du_cluster.iterrows()]
             rayon_estime = int(max(distances)) if distances else 0
-            if rayon_estime < 50: rayon_estime = 100 
+            if rayon_estime < 100: 
+                rayon_estime = 100 
 
-            cursor.execute("""
-                SELECT id_cluster FROM cluster_cas 
-                WHERE id_cas_maladie = ANY(%s) 
-                LIMIT 1;
+            # Ce cluster existe-t-il déjà ?
+            cursor_exec.execute("""
+                SELECT id_cluster FROM cluster_cas WHERE id_cas_maladie = ANY(%s) LIMIT 1;
             """, (liste_ids_cas,))
-            
-            resultat_existant = cursor.fetchone()
+            resultat_existant = cursor_exec.fetchone()
 
             if resultat_existant:
                 id_cluster_db = resultat_existant[0]
-                print(f"      🔄 Foyer existant #{id_cluster_db} mis à jour ({nombre_cas} cas).")
                 
-                cursor.execute("""
+                # 🌟 ÉVITER LE SPAM : On récupère l'ancien nombre de cas pour comparer
+                cursor_exec.execute("SELECT nombre_cas_actuel FROM cluster_epidemique WHERE id = %s;", (id_cluster_db,))
+                ancien_nombre = cursor_exec.fetchone()[0]
+
+                # Mise à jour du cluster
+                cursor_exec.execute("""
                     UPDATE cluster_epidemique 
-                    SET rayon_actuel = %s, nombre_cas_actuel = %s, 
-                        centre_latitude_actuel = %s, centre_longitude_actuel = %s
+                    SET rayon_actuel = %s, nombre_cas_actuel = %s, centre_latitude_actuel = %s, centre_longitude_actuel = %s
                     WHERE id = %s;
                 """, (rayon_estime, nombre_cas, centre_lat, centre_lon, id_cluster_db))
-            else:
-                print(f"      ⚠️ NOUVELLE ALERTE : Foyer avec {nombre_cas} cas.")
+
+                # 🌟 NOTIFICATION D'ÉVOLUTION (Seulement si aggravation !)
+                if nombre_cas > ancien_nombre:
+                    nouveaux_cas = nombre_cas - ancien_nombre
+                    cursor_exec.execute("""
+                        INSERT INTO notification (titre, message, type_alerte, role_cible)
+                        VALUES (%s, %s, 'AVERTISSEMENT', 'MCZ')
+                    """, ("AGGRAVATION D'UN FOYER", f"Le foyer #{id_cluster_db} a enregistré {nouveaux_cas} nouveaux cas. Il compte désormais {nombre_cas} cas actifs."))
+                    print(f"      🔄 Foyer #{id_cluster_db} aggravé (+{nouveaux_cas} cas) -> Notification envoyée.")
+                else:
+                    print(f"      🔄 Foyer #{id_cluster_db} mis à jour (aucun nouveau cas).")
                 
-                cursor.execute("""
-                    INSERT INTO cluster_epidemique 
-                    (rayon_actuel, nombre_cas_actuel, centre_latitude_actuel, centre_longitude_actuel, id_maladie, id_statut)
+            else:
+                # 🌟 NOUVEAU FOYER
+                cursor_exec.execute("""
+                    INSERT INTO cluster_epidemique (rayon_actuel, nombre_cas_actuel, centre_latitude_actuel, centre_longitude_actuel, id_maladie, id_statut)
                     VALUES (%s, %s, %s, %s, %s, 3) RETURNING id;
                 """, (rayon_estime, nombre_cas, centre_lat, centre_lon, MALADIE_ID))
-                
-                id_cluster_db = cursor.fetchone()[0]
+                id_cluster_db = cursor_exec.fetchone()[0]
 
-                # 🌟 NOUVEAU : Envoi d'une notification Push au MCZ
-                cursor.execute("""
+                # 🌟 NOTIFICATION DE CRÉATION
+                cursor_exec.execute("""
                     INSERT INTO notification (titre, message, type_alerte, role_cible)
                     VALUES (%s, %s, 'URGENCE', 'MCZ')
-                """, ("NOUVEAU FOYER DÉTECTÉ", f"L'algorithme IA a identifié un nouveau cluster épidémique actif dans votre zone avec {nombre_cas} cas détectés."))
+                """, ("NOUVEAU FOYER DÉTECTÉ", f"L'IA a identifié un nouveau cluster épidémique (Foyer #{id_cluster_db}) avec {nombre_cas} cas."))
+                print(f"      ⚠️ NOUVEAU FOYER #{id_cluster_db} détecté avec {nombre_cas} cas -> Notification envoyée.")
 
+            # Rattachement des cas
             for cas_id in liste_ids_cas:
-                cursor.execute("""
-                    INSERT INTO cluster_cas (id_cluster, id_cas_maladie) 
-                    VALUES (%s, %s)
+                cursor_exec.execute("""
+                    INSERT INTO cluster_cas (id_cluster, id_cas_maladie) VALUES (%s, %s)
                     ON CONFLICT (id_cluster, id_cas_maladie) DO NOTHING;
                 """, (id_cluster_db, cas_id))
 
@@ -126,10 +139,13 @@ def executer_dbscan():
 
     except Exception as e:
         print(f"   ❌ Erreur critique DBSCAN : {e}")
-        if 'conn' in locals(): conn.rollback()
+        if 'conn' in locals(): 
+            conn.rollback()
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if 'cursor_exec' in locals(): 
+            cursor_exec.close()
+        if 'conn' in locals(): 
+            conn.close()
 
 if __name__ == "__main__":
     executer_dbscan()
