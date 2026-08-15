@@ -575,26 +575,30 @@ class UtilisateurCreate(BaseModel):
     id_centre: Optional[int] = None #  Devient optionnel (accepte None/null pour le MCZ)
     sexe: str = 'M'
     telephone: str = ''
+    
 @app.post("/api/admin/utilisateurs")
 async def creer_utilisateur(user: UtilisateurCreate):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Détermination de l'ID du rôle
+        # Détermination de l'ID du rôle et gestion du centre
         if user.role == 'MCZ': 
             id_role = 1
+            user.id_centre = None  # Le MCZ n'a pas de centre
         elif user.role == 'MEDECIN': 
             id_role = 2
         else: 
             id_role = 3
             
         cursor.execute("""
-            INSERT INTO utilisateur (nom_utilisateur, mot_de_passe, etat, id_role, sexe, telephone,id_centre_sante)
-            VALUES (%s, %s, 'ACTIF', %s, %s, %s,%s) RETURNING id;
-        """, (user.login, user.mdp, id_role, user.sexe, user.telephone,user.id_centre))
+            INSERT INTO utilisateur (nom_utilisateur, mot_de_passe, etat, id_role, sexe, telephone, id_centre_sante)
+            VALUES (%s, %s, 'ACTIF', %s, %s, %s, %s) RETURNING id;
+        """, (user.login, user.mdp, id_role, user.sexe, user.telephone, user.id_centre))
         
-        new_id = cursor.fetchone()[0]
+        res = cursor.fetchone()
+        new_id = res['id'] if isinstance(res, dict) else res[0]
+
         conn.commit()
         return {"message": "Utilisateur créé", "id": new_id}
     except Exception as e:
@@ -603,23 +607,22 @@ async def creer_utilisateur(user: UtilisateurCreate):
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
+
+
 @app.put("/api/admin/utilisateurs/{user_id}")
 async def modifier_utilisateur(user_id: int, user: UtilisateurCreate):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # Détermination du rôle et gestion du centre
         if user.role == 'MCZ': 
             id_role = 1
-            # Le MCZ n'appartient à aucun centre, on force NULL
             user.id_centre = None
         elif user.role == 'MEDECIN': 
             id_role = 2
         else: 
             id_role = 3
         
-        # Si le mdp n'est PAS vide, on met à TOUT jour y compris le mot de passe
         if user.mdp and user.mdp.strip() != '':
             cursor.execute("""
                 UPDATE utilisateur 
@@ -627,7 +630,6 @@ async def modifier_utilisateur(user_id: int, user: UtilisateurCreate):
                 WHERE id = %s;
             """, (user.login, user.mdp, id_role, user.sexe, user.telephone, user.id_centre, user_id))
         else:
-            # Sinon, on met à jour le reste sans toucher au mot de passe actuel
             cursor.execute("""
                 UPDATE utilisateur 
                 SET nom_utilisateur = %s, id_role = %s, sexe = %s, telephone = %s, id_centre_sante = %s
@@ -643,14 +645,13 @@ async def modifier_utilisateur(user_id: int, user: UtilisateurCreate):
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
         
+
 @app.get("/api/admin/utilisateurs")
 async def get_utilisateurs():
     try:
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         
-        # ✅ FILTRE : On ne remonte que les Utilisateurs ACTIFS 
-        # (les médecins / infirmiers désactivés n'apparaîtront plus ici)
         cursor.execute("""
             SELECT u.id, u.nom_utilisateur as login, r.nom as role, 
                    COALESCE(c.nom, 'Zone Globale') as centre,
@@ -668,22 +669,21 @@ async def get_utilisateurs():
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
 
+
 @app.delete("/api/admin/utilisateurs/{user_id}")
 async def supprimer_utilisateur(user_id: int):
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
-        # On vérifie d'abord si le médecin a déjà créé des cas
-        cursor.execute("SELECT COUNT(*) FROM cas_maladie WHERE id_utilisateur = %s;", (user_id,))
-        nb_cas = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) as total FROM cas_maladie WHERE id_utilisateur = %s;", (user_id,))
+        res = cursor.fetchone()
+        nb_cas = res['total'] if isinstance(res, dict) else res[0]
 
         if nb_cas > 0:
-            # S'il a des cas, on ne peut pas le supprimer, on le désactive (INACTIF)
             cursor.execute("UPDATE utilisateur SET etat = 'INACTIF' WHERE id = %s;", (user_id,))
             message = f"Ce compte a enregistré {nb_cas} cas. Il a été désactivé (INACTIF) au lieu d'être supprimé."
         else:
-            # S'il n'a rien fait, on peut le supprimer physiquement
             cursor.execute("DELETE FROM utilisateur WHERE id = %s;", (user_id,))
             message = "Compte médical supprimé avec succès."
             
@@ -695,7 +695,6 @@ async def supprimer_utilisateur(user_id: int):
     finally:
         if 'cursor' in locals(): cursor.close()
         if 'conn' in locals(): conn.close()
-
 # ==========================================
 # ROUTES : SAISIE DES CAS (MANUELLE & OCR)
 # ==========================================
