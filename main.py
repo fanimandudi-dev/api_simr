@@ -697,28 +697,7 @@ async def supprimer_utilisateur(user_id: int):
         if 'conn' in locals(): conn.close()
 
 # ==========================================
-# ROUTES : SAISIE DES CAS (MANUELLE & OCR)
-# ==========================================
-class CasMaladieCreate(BaseModel):
-    patientNom: str
-    patientPrenom: str
-    patientPostnom: Optional[str] = ""
-    dateNaissance: Optional[str] = None
-    sexe: str = 'M'
-    telephone: Optional[str] = ""
-    commune: str
-    quartier: str = ""
-    avenue: str = ""
-    numeroResidence: str = ""
-    symptomes: str = ''
-    statutId: int = 1
-    sourceSaisie: str
-    lat_gps: Optional[float] = None
-    lng_gps: Optional[float] = None
-    id_centre: int
-    id_utilisateur: int
-
-@app.post("/api/cas")
+# ROUTES : SAISIE DES CAS (MANUELLE & OCR)@app.post("/api/cas")
 async def creer_nouveau_cas(cas_data: CasMaladieCreate):
     try:
         conn = get_db_connection()
@@ -747,7 +726,7 @@ async def creer_nouveau_cas(cas_data: CasMaladieCreate):
             coords["lng"],
             coords["precision"]
         ))
-        id_adresse = cursor.fetchone()[0]
+        id_adresse = cursor.fetchone()['id']  # 👈 Utilisation de la clé 'id'
 
         # -------------------------------------------------------------
         # SUITE NORMALE DE L'ENREGISTREMENT
@@ -756,13 +735,13 @@ async def creer_nouveau_cas(cas_data: CasMaladieCreate):
             INSERT INTO patient (nom, prenom, post_nom, sexe, telephone, date_insertion, id_adresse)
             VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP, %s) RETURNING id;
         """, (cas_data.patientNom, cas_data.patientPrenom, cas_data.patientPostnom, cas_data.sexe, cas_data.telephone, id_adresse))
-        id_patient = cursor.fetchone()[0]
+        id_patient = cursor.fetchone()['id']  # 👈 Utilisation de la clé 'id'
 
         cursor.execute("""
             INSERT INTO cas_maladie (id_patient, id_maladie, id_centre_sante, id_adresse, id_utilisateur, id_statut)
             VALUES (%s, 1, %s, %s, %s, %s) RETURNING id;
         """, (id_patient, cas_data.id_centre, id_adresse, cas_data.id_utilisateur, cas_data.statutId))
-        id_cas = cursor.fetchone()[0]
+        id_cas = cursor.fetchone()['id']      # 👈 Utilisation de la clé 'id'
 
         if cas_data.symptomes:
             cursor.execute("""
