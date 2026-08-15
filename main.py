@@ -959,3 +959,44 @@ async def trigger_dbscan():
         return {"message": "DBSCAN exécuté avec succès."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+# ROUTES : NOTIFICATIONS (CLOCHE)
+# ==========================================
+@app.get("/api/notifications")
+async def get_notifications(role: str = 'MCZ'):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute("""
+            SELECT id, titre, message, type_alerte, est_lue, date_creation
+            FROM notification
+            WHERE role_cible = %s OR role_cible = 'TOUS'
+            ORDER BY date_creation DESC
+            LIMIT 15;
+        """, (role,))
+        
+        return cursor.fetchall()
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+@app.put("/api/notifications/{notif_id}/lire")
+async def marquer_notif_lue(notif_id: int):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("UPDATE notification SET est_lue = TRUE WHERE id = %s;", (notif_id,))
+        conn.commit()
+        return {"message": "Notification lue"}
+    except Exception as e:
+        if 'conn' in locals(): conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
