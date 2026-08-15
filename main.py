@@ -147,17 +147,36 @@ async def login(credentials: LoginData):
         
 @app.get("/api/system-status")
 async def get_system_status():
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM zone_sante;")
-        count = cursor.fetchone()[0]
-        return {"isConfigured": count > 0}
+        
+        # Utilisation d'un alias explicite 'count_val'
+        cursor.execute("SELECT COUNT(*) AS count_val FROM zone_sante;")
+        result = cursor.fetchone()
+
+        if not result:
+            return {"isConfigured": False}
+
+        # Verification selon la nature du curseur (Dict ou Tuple)
+        if isinstance(result, dict):
+            total_count = result.get("count_val", 0)
+        else:
+            total_count = result[0]
+
+        return {"isConfigured": total_count > 0}
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Enregistre ou remonte l'erreur exacte pour le developpement
+        raise HTTPException(status_code=500, detail=f"Erreur DB : {str(e)}")
+        
     finally:
-        if 'cursor' in locals(): cursor.close()
-        if 'conn' in locals(): conn.close()
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ==========================================
