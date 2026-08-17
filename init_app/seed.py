@@ -3,7 +3,46 @@ import psycopg2
 from dotenv import load_dotenv
 from faker import Faker
 import random
+import math
 from datetime import datetime, timedelta
+
+# =================================================================
+# CONFIGURATION DES FOYERS ET DU BRUIT SPATIAL
+# =================================================================
+FOYERS = [
+    # 1. FOYER DENSE (Le Gros Cluster Rouge)
+    # Centré sur Limete/Mombele avec un rayon très serré de 300m
+    {"lat": -4.3415, "lng": 15.3210, "rayon_m": 300, "nb_cas": 65, "commune": "Limete", "quartier": "Mombele", "precision": "GPS_EXACT"},
+    
+    # 2. FOYER ÉMERGENT (Le Cluster Orange)
+    # Centré sur Kingabwa avec un rayon de 450m
+    {"lat": -4.3250, "lng": 15.3340, "rayon_m": 450, "nb_cas": 40, "commune": "Limete", "quartier": "Kingabwa", "precision": "OSM_ADRESSE"},
+    
+    # 3. LE BRUIT (Les points bleus dispersés sur Kinshasa)
+    # Centré sur Kalamu et dispersé sur un rayon de 3500m (3.5 km)
+    {"lat": -4.3500, "lng": 15.3100, "rayon_m": 3500, "nb_cas": 195, "commune": "Kalamu", "quartier": "Divers", "precision": "OSM_QUARTIER"}
+]
+
+def generer_point_jitter(lat_centre: float, lng_centre: float, rayon_m: float):
+    """
+    Génère un point aléatoire uniformément distribué à l'intérieur
+    d'un cercle de rayon rayon_m autour d'un centre (lat, lng).
+    """
+    R_terre = 6371000.0  # Rayon de la Terre en mètres
+    
+    # Distribution uniforme sur la surface du disque
+    r = rayon_m * math.sqrt(random.random())
+    theta = random.uniform(0, 2 * math.pi)
+    
+    # Déplacement en mètres
+    dx = r * math.cos(theta)
+    dy = r * math.sin(theta)
+    
+    # Conversion en dLat et dLng en degrés
+    dlat = (dy / R_terre) * (180 / math.pi)
+    dlng = (dx / (R_terre * math.cos(math.radians(lat_centre)))) * (180 / math.pi)
+    
+    return lat_centre + dlat, lng_centre + dlng
 
 def seed_profond():
     load_dotenv()
@@ -14,7 +53,7 @@ def seed_profond():
         return
 
     fake = Faker('fr_FR')
-    print("🌍 Démarrage du Seeding Profond (Mass Data Generation)...")
+    print("🌍 Démarrage du Seeding Profond (Mass Data Generation basé sur FOYERS)...")
     conn = None
     cursor = None
 
@@ -75,30 +114,41 @@ def seed_profond():
         """, users_data)
 
         # =================================================================
-        # 3. DONNÉES CLINIQUES (Génération de 300 cas)
+        # 3. DONNÉES CLINIQUES (Génération géospatiale basée sur FOYERS)
         # =================================================================
-        print("   -> Génération de 300 cas médicaux (Adresses, Patients, Cas, Symptômes)...")
-        NB_CAS = 300
+        print("   -> Génération des adresses structurées selon la topologie FOYERS...")
         adresses_data = []
         
-        # Astuce d'ingénierie : Optimisation des batchs avec executemany sur ID auto-incrémentés
-        # Comme on a réinitialisé la DB, l'ID de la prochaine adresse sera le Max(ID)+1
         cursor.execute("SELECT COALESCE(MAX(id), 0) FROM adresse;")
         start_adresse_id = cursor.fetchone()[0] + 1
         
-        precisions = ["GPS_EXACT", "OSM_ADRESSE", "OSM_QUARTIER"]
-        for _ in range(NB_CAS):
-            adresses_data.append((
-                "Limete", fake.street_name(), fake.street_name(), str(random.randint(1, 100)),
-                -4.33 + random.uniform(-0.03, 0.03), 15.32 + random.uniform(-0.03, 0.03), random.choice(precisions)
-            ))
+        # Génération des points d'adresses en suivant la répartition des foyers
+        for foyer in FOYERS:
+            for _ in range(foyer["nb_cas"]):
+                lat_p, lng_p = generer_point_jitter(foyer["lat"], foyer["lng"], foyer["rayon_m"])
+                
+                quartier_nom = foyer["quartier"] if foyer["quartier"] != "Divers" else fake.street_name()
+                
+                adresses_data.append((
+                    foyer["commune"], 
+                    quartier_nom, 
+                    fake.street_name(), 
+                    str(random.randint(1, 120)),
+                    lat_p, 
+                    lng_p, 
+                    foyer["precision"]
+                ))
+                
+        nb_total_cas = len(adresses_data)
+        
         cursor.executemany("""
             INSERT INTO adresse (commune, quartier, avenue, numero, latitude, longitude, niveau_precision)
             VALUES (%s, %s, %s, %s, %s, %s, %s);
         """, adresses_data)
 
+        print(f"   -> Génération de {nb_total_cas} patients et cas associés...")
         patients_data = []
-        for i in range(NB_CAS):
+        for i in range(nb_total_cas):
             patients_data.append((
                 fake.last_name(), fake.first_name(), fake.last_name(), random.choice(['M', 'F']), 
                 fake.phone_number(), start_adresse_id + i
@@ -121,10 +171,10 @@ def seed_profond():
         cursor.execute("SELECT COALESCE(MAX(id), 0) FROM cas_maladie;")
         start_cas_id = cursor.fetchone()[0] + 1
 
-        for i in range(NB_CAS):
+        for i in range(nb_total_cas):
             # Simulation d'un historique sur les 30 derniers jours
             date_enreg = date_actuelle - timedelta(days=random.randint(0, 30))
-            id_patient_attribue = start_adresse_id + i # Adresse ID == Patient ID car insertion 1:1
+            id_patient_attribue = start_adresse_id + i
             id_centre_attribue = random.choice(centres_ids)
             id_user_attribue = random.choice(users_ids)
             
@@ -149,7 +199,7 @@ def seed_profond():
         """, symptomes_data)
 
         conn.commit()
-        print("✅ SUCCÈS : 300 cas générés et insérés avec leurs relations via Executemany.")
+        print(f"✅ SUCCÈS : {nb_total_cas} cas insérés selon la topologie exacte des foyers DBSCAN.")
 
     except psycopg2.Error as e:
         if conn: conn.rollback()
