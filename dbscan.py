@@ -43,8 +43,8 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 # --- PARAMÈTRES IA ---
 MALADIE_ID = 1                 # 1 = Choléra
-DISTANCE_METRES = 450          # Epsilon : rayon de voisinage spatial (450 m)
-MIN_CAS_POUR_ALERTE = 3        # MinPts : nombre de cas requis pour former un foyer
+DISTANCE_METRES = 800         # Epsilon : rayon de voisinage spatial (450 m)
+MIN_CAS_POUR_ALERTE = 5     # MinPts : nombre de cas requis pour former un foyer
 RAYON_TERRE_M = 6_371_008.8    # Rayon terrestre en MÈTRES (Haversine)
 FENETRE_ANALYSE_JOURS = 30     # Fenêtre temporelle d'analyse (cas récents)
 
