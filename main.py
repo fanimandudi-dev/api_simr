@@ -37,7 +37,7 @@ from db import close_pool, db_cursor, get_conn
 # Modules d'Intelligence Artificielle du projet
 import geocode
 import ocr_simr
-
+import hr_ocr 
 
 # ==========================================
 # RÉTRO-COMPATIBILITÉ (anciens modules)
@@ -715,17 +715,32 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @app.post("/api/simr/upload")
 def upload_simr_form(file: UploadFile = File(...)):
-    # ✅ os.path.basename() → protection contre le path traversal (../../etc/passwd)
-    filename = os.path.basename(file.filename or "fiche_simr")
-    file_path = os.path.join(UPLOAD_DIR, filename)
-
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    result = ocr_simr.traiter_image_simr(file_path)
-    return {"message": "Fiche scannée", "image_url": file_path, "ocr_data": result}
-
-
+   try:
+        # 1. On sauvegarde l'image envoyée par l'infirmier
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        
+        # 2. 🌟 NOUVEAU PIPELINE : On délègue l'analyse au modèle Transformer dans le Cloud !
+        # (Dans un projet complet, on utiliserait OpenCV ici pour découper l'image ligne par ligne 
+        # avant d'envoyer chaque ligne à l'API, car TrOCR lit des lignes simples)
+        texte_brut = hr_ocr.analyser_image_api(file_path)
+        
+        # 3. Extraction (Simulation de la récupération Regex pour le formulaire Angular)
+        # Vous devrez adapter vos Regex en fonction du format réel de vos fiches SIMR
+        result = {
+            "patientNom": texte_brut if texte_brut else "Non reconnu",
+            "commune": "Kinshasa", # Valeurs par défaut pour l'exemple
+            "quartier": "Mombele",
+            "symptomes": "Diarrhée aqueuse"
+        }
+        
+        return {"message": "Fiche analysée par le modèle HTR", "image_url": file_path, "ocr_data": result}
+        
+   except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Erreur d'analyse IA : {str(e)}")
 # ==========================================
 # ROUTES : NOTIFICATIONS (CLOCHE)
 # ==========================================
