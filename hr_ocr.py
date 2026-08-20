@@ -8,13 +8,13 @@ HF_API_KEY = os.getenv("HF_API_KEY")
 
 
 def analyser_image_api(image_path: str) -> str:
+    """Envoie l'image à l'API Inference Hugging Face via le SDK officiel."""
     if not HF_API_KEY:
-        print(
-            "❌ Erreur : La clé HF_API_KEY est introuvable ou vide dans l'environnement Render."
-        )
+        print("❌ Erreur : La clé HF_API_KEY est introuvable sur Render.")
         return ""
 
     try:
+        # Initialisation du client Inference officiel
         client = InferenceClient(token=HF_API_KEY)
 
         with open(image_path, "rb") as f:
@@ -22,6 +22,8 @@ def analyser_image_api(image_path: str) -> str:
 
         print("🚀 Appel API Cloud (Hugging Face SDK)...")
 
+        # Utilisation de l'API de description/texte d'image
+        # Si trocr-base-handwritten pose problème, utiliser 'naver-clova-ix/donut-base'
         response = client.image_to_text(
             image=image_bytes, model="microsoft/trocr-base-handwritten"
         )
@@ -31,8 +33,7 @@ def analyser_image_api(image_path: str) -> str:
         return texte_predit
 
     except Exception as e:
-        # Affiche le type d'erreur exact + le détail du problème
-        print(f"❌ Erreur lors de l'appel Hugging Face [{type(e).__name__}] : {repr(e)}")
-        # Utile dans les logs Render pour voir la ligne exacte qui plante :
+        print(f"❌ Erreur Hugging Face [{type(e).__name__}] : {e}")
+        # Affiche la trace complète dans les logs Render pour cibler la ligne
         traceback.print_exc()
         return ""
