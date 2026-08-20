@@ -36,7 +36,7 @@ from db import close_pool, db_cursor, get_conn
 
 # Modules d'Intelligence Artificielle du projet
 import geocode
-import ocr_simr
+#import ocr_simr
 import hr_ocr 
 
 # ==========================================
