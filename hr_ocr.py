@@ -7,7 +7,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 HF_API_KEY = os.getenv("HF_API_KEY")
-API_URL = "https://router.huggingface.co/hf-inference/models/microsoft/trocr-base-handwritten"
+# Remplacer microsoft/trocr-base-handwritten par un modèle supporté
+API_URL = "https://router.huggingface.co/hf-inference/models/naver-clova-ix/donut-base"
 HEADERS = {"Authorization": f"Bearer {HF_API_KEY}"}
 
 
